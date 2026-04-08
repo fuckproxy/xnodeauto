@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -112,12 +115,44 @@ func hostToIP(host string) string {
 	return addrs[0]
 }
 
+// ---------- node config hash ----------
+
+// configHash computes a stable hash over the fields that affect node runtime behavior.
+func configHash(node Node) string {
+	parts := []string{
+		node.Host,
+		string(node.Port),
+		string(node.ServerPort),
+		string(node.ProtocolSettings),
+	}
+	sort.Strings(parts)
+	h := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(h[:])
+}
+
+func readHashFile(nodeID int) string {
+	path := filepath.Join(configDir, fmt.Sprintf("%d.hash", nodeID))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeHashFile(nodeID int, hash string) {
+	path := filepath.Join(configDir, fmt.Sprintf("%d.hash", nodeID))
+	os.WriteFile(path, []byte(hash), 0644)
+}
+
 // ---------- Xboard API ----------
 
 type Node struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	Host string `json:"host"`
+	ID               int              `json:"id"`
+	Name             string           `json:"name"`
+	Host             string           `json:"host"`
+	Port             json.RawMessage  `json:"port"`
+	ServerPort       json.RawMessage  `json:"server_port"`
+	ProtocolSettings json.RawMessage  `json:"protocol_settings"`
 }
 
 type loginRequest struct {
@@ -363,6 +398,7 @@ func main() {
 	for id, node := range wantedMap {
 		if !currentIDs[id] {
 			writeConfig(cfg, node)
+			writeHashFile(id, configHash(node))
 			systemctl("enable", id)
 			systemctl("start", id)
 			fmt.Printf("[+] started node %d (%s)\n", id, node.Name)
@@ -375,6 +411,7 @@ func main() {
 		if !wantedIDs[id] {
 			systemctl("stop", id)
 			systemctl("disable", id)
+			os.Remove(filepath.Join(configDir, fmt.Sprintf("%d.hash", id)))
 			fmt.Printf("[-] stopped node %d\n", id)
 			hasChanges = true
 		}
@@ -383,10 +420,19 @@ func main() {
 	// check existing nodes for config changes
 	for id, node := range wantedMap {
 		if currentIDs[id] {
-			changed, _ := writeConfig(cfg, node)
-			if changed {
+			cfgChanged, _ := writeConfig(cfg, node)
+			newHash := configHash(node)
+			oldHash := readHashFile(id)
+			hashChanged := newHash != oldHash
+
+			if cfgChanged || hashChanged {
+				writeHashFile(id, newHash)
 				systemctl("restart", id)
-				fmt.Printf("[~] restarted node %d (%s) (config changed)\n", id, node.Name)
+				reason := "config changed"
+				if hashChanged {
+					reason = "panel settings changed"
+				}
+				fmt.Printf("[~] restarted node %d (%s) (%s)\n", id, node.Name, reason)
 				hasChanges = true
 			}
 		}
