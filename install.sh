@@ -99,9 +99,9 @@ mkdir -p /etc/xboard-node
 
 # ---------- 5. 下载并安装 systemd 文件 ----------
 echo "[5/7] Installing systemd unit files..."
-wget -qO /etc/systemd/system/xboard-node@.service  "${REPO_RAW}/systemd/xboard-node@.service"
-wget -qO /etc/systemd/system/sync-nodes.service     "${REPO_RAW}/systemd/sync-nodes.service"
-wget -qO /etc/systemd/system/sync-nodes.timer       "${REPO_RAW}/systemd/sync-nodes.timer"
+wget -4 -qO /etc/systemd/system/xboard-node@.service  "${REPO_RAW}/systemd/xboard-node@.service"
+wget -4 -qO /etc/systemd/system/sync-nodes.service     "${REPO_RAW}/systemd/sync-nodes.service"
+wget -4 -qO /etc/systemd/system/sync-nodes.timer       "${REPO_RAW}/systemd/sync-nodes.timer"
 
 # ---------- 6. 写入配置 ----------
 echo "[6/7] Writing config..."
